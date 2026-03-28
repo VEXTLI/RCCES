@@ -17,8 +17,24 @@
 </head>
 <body class="text-slate-800 pb-20">
 
+    <!-- Pantalla de Bloqueo / Código de Acceso -->
+    <div id="authOverlay" class="fixed inset-0 bg-red-700 z-[200] flex items-center justify-center p-6 text-white">
+        <div class="max-w-sm w-full text-center space-y-6">
+            <i data-lucide="lock" class="w-16 h-16 mx-auto text-yellow-300"></i>
+            <h2 class="text-2xl font-bold">Acceso Restringido</h2>
+            <p class="text-red-100 text-sm">Ingresa el código del Ministerio para ver la información de los boletos.</p>
+            <div class="space-y-3">
+                <input type="password" id="accessCodeInput" placeholder="Código de acceso" class="w-full p-4 rounded-xl border-none text-slate-800 font-bold text-center focus:ring-4 focus:ring-yellow-400 outline-none">
+                <button onclick="checkAccess()" class="w-full bg-yellow-400 hover:bg-yellow-300 text-red-900 font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
+                    Entrar
+                </button>
+            </div>
+            <p id="authError" class="text-yellow-300 font-bold hidden">Código incorrecto. Inténtalo de nuevo.</p>
+        </div>
+    </div>
+
     <!-- Indicador de Carga -->
-    <div id="loadingOverlay" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center transition-opacity duration-500">
+    <div id="loadingOverlay" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center transition-opacity duration-500 hidden">
         <div class="loader mb-4"></div>
         <p class="text-red-700 font-bold animate-pulse">Sincronizando con la nube...</p>
     </div>
@@ -108,13 +124,39 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const docRef = doc(db, "rcces", "boletos-v1"); // Documento único para todo el grupo
+        const docRef = doc(db, "rcces", "boletos-v1");
 
         const names = ["Doña Remi", "Lupita palma", "Yuli", "kike", "Emilio", "Ale García", "Ricardo", "Anita", "linda", "Toño Rivas", "Lucy", "Toño", "Shenny", "Felipe", "Ale", "Mario", "Lucero", "Alex", "Amairani", "Ángel", "Dani Eliza", "Gaby", "Brenda", "Iván", "Jessi", "Karla", "Linda", "Marcos", "Nico", "Nuri", "mateo"];
         
         window.state = { price: 50, members: [] };
 
-        // Función para crear datos iniciales si la base está vacía
+        // Función de autenticación sencilla
+        window.checkAccess = () => {
+            const code = document.getElementById('accessCodeInput').value.toLowerCase().trim();
+            if (code === "diosteama") {
+                document.getElementById('authOverlay').classList.add('hidden');
+                document.getElementById('loadingOverlay').classList.remove('hidden');
+                startApp();
+            } else {
+                document.getElementById('authError').classList.remove('hidden');
+            }
+        };
+
+        function startApp() {
+            // Sincronización en Tiempo Real
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    window.state = docSnap.data();
+                } else {
+                    window.state.members = createInitialState();
+                    saveToCloud();
+                }
+                render();
+                document.getElementById('loadingOverlay').classList.add('opacity-0');
+                setTimeout(() => document.getElementById('loadingOverlay').classList.add('hidden'), 500);
+            });
+        }
+
         function createInitialState() {
             let n = 1;
             return names.map((name, i) => {
@@ -124,19 +166,6 @@
                 return m;
             });
         }
-
-        // Sincronización en Tiempo Real
-        onSnapshot(docRef, (docSnap) => {
-            if (docSnap.exists()) {
-                window.state = docSnap.data();
-            } else {
-                window.state.members = createInitialState();
-                saveToCloud();
-            }
-            render();
-            document.getElementById('loadingOverlay').classList.add('opacity-0');
-            setTimeout(() => document.getElementById('loadingOverlay').classList.add('hidden'), 500);
-        });
 
         async function saveToCloud() {
             try {
@@ -184,7 +213,6 @@
             `;
             lucide.createIcons();
             
-            // Re-renderizar modal si está abierto
             if (window.currentModalId !== null) renderModalTickets(window.currentModalId);
         }
 
@@ -229,6 +257,7 @@
         };
 
         window.currentModalId = null;
+        lucide.createIcons();
     </script>
 </body>
 </html>
