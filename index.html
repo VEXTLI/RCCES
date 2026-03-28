@@ -17,24 +17,8 @@
 </head>
 <body class="text-slate-800 pb-20">
 
-    <!-- Pantalla de Bloqueo / Código de Acceso -->
-    <div id="authOverlay" class="fixed inset-0 bg-red-700 z-[200] flex items-center justify-center p-6 text-white">
-        <div class="max-w-sm w-full text-center space-y-6">
-            <i data-lucide="lock" class="w-16 h-16 mx-auto text-yellow-300"></i>
-            <h2 class="text-2xl font-bold">Acceso Restringido</h2>
-            <p class="text-red-100 text-sm">Ingresa el código del Ministerio para ver la información de los boletos.</p>
-            <div class="space-y-3">
-                <input type="password" id="accessCodeInput" placeholder="Código de acceso" class="w-full p-4 rounded-xl border-none text-slate-800 font-bold text-center focus:ring-4 focus:ring-yellow-400 outline-none">
-                <button onclick="checkAccess()" class="w-full bg-yellow-400 hover:bg-yellow-300 text-red-900 font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95">
-                    Entrar
-                </button>
-            </div>
-            <p id="authError" class="text-yellow-300 font-bold hidden">Código incorrecto. Inténtalo de nuevo.</p>
-        </div>
-    </div>
-
-    <!-- Indicador de Carga -->
-    <div id="loadingOverlay" class="fixed inset-0 bg-white/80 backdrop-blur-sm z-[100] flex flex-col items-center justify-center transition-opacity duration-500 hidden">
+    <!-- Indicador de Carga Inicial -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center transition-opacity duration-500">
         <div class="loader mb-4"></div>
         <p class="text-red-700 font-bold animate-pulse">Sincronizando con la nube...</p>
     </div>
@@ -130,20 +114,8 @@
         
         window.state = { price: 50, members: [] };
 
-        // Función de autenticación sencilla
-        window.checkAccess = () => {
-            const code = document.getElementById('accessCodeInput').value.toLowerCase().trim();
-            if (code === "diosteama") {
-                document.getElementById('authOverlay').classList.add('hidden');
-                document.getElementById('loadingOverlay').classList.remove('hidden');
-                startApp();
-            } else {
-                document.getElementById('authError').classList.remove('hidden');
-            }
-        };
-
+        // Iniciar la aplicación directamente sin código de acceso
         function startApp() {
-            // Sincronización en Tiempo Real
             onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.state = docSnap.data();
@@ -152,8 +124,11 @@
                     saveToCloud();
                 }
                 render();
-                document.getElementById('loadingOverlay').classList.add('opacity-0');
-                setTimeout(() => document.getElementById('loadingOverlay').classList.add('hidden'), 500);
+                const loader = document.getElementById('loadingOverlay');
+                if (loader) {
+                    loader.classList.add('opacity-0');
+                    setTimeout(() => loader.classList.add('hidden'), 500);
+                }
             });
         }
 
@@ -172,7 +147,6 @@
                 await setDoc(docRef, window.state);
             } catch (e) {
                 console.error("Error guardando:", e);
-                alert("Error: Verifica las reglas de Firestore.");
             }
         }
 
@@ -258,6 +232,7 @@
 
         window.currentModalId = null;
         lucide.createIcons();
+        startApp(); // Ejecutar carga al iniciar
     </script>
 </body>
 </html>
