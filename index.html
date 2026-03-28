@@ -20,7 +20,8 @@
     <!-- Indicador de Carga Inicial -->
     <div id="loadingOverlay" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center transition-opacity duration-500">
         <div class="loader mb-4"></div>
-        <p class="text-red-700 font-bold animate-pulse">Sincronizando con la nube...</p>
+        <p id="loadingText" class="text-red-700 font-bold animate-pulse">Sincronizando con la nube...</p>
+        <p id="loadingSubtext" class="text-[10px] text-slate-400 mt-2 px-6 text-center">Si tarda mucho, verifica que las Reglas de Firebase estén en "true".</p>
     </div>
 
     <header class="bg-red-700 text-white shadow-md sticky top-0 z-10">
@@ -33,8 +34,8 @@
                 </div>
             </div>
             <div id="cloudStatus" class="flex items-center gap-1.5 text-[10px] bg-red-800 px-2 py-1 rounded-full border border-red-600">
-                <span class="w-2 h-2 rounded-full bg-green-400"></span> 
-                <span>SINCRO ACTIVA</span>
+                <span id="statusDot" class="w-2 h-2 rounded-full bg-orange-400"></span> 
+                <span id="statusText">CONECTANDO...</span>
             </div>
         </div>
     </header>
@@ -47,7 +48,7 @@
         <div class="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex justify-between items-center shadow-sm">
             <div>
                 <span class="text-sm font-semibold text-slate-600">Precio del Boleto</span>
-                <p class="text-[10px] text-slate-400">Se actualiza para todos</p>
+                <p class="text-[10px] text-slate-400">Cambio global</p>
             </div>
             <div class="flex items-center gap-2">
                 <span class="text-slate-400">$</span>
@@ -55,7 +56,7 @@
             </div>
         </div>
 
-        <!-- Tabla de Miembros -->
+        <!-- Tabla -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -73,7 +74,7 @@
         </div>
     </main>
 
-    <!-- Modal de Gestión -->
+    <!-- Modal -->
     <div id="ticketModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden fade-in flex flex-col max-h-[85vh]">
             <div class="p-5 border-b flex justify-between items-center bg-slate-50">
@@ -91,12 +92,10 @@
         </div>
     </div>
 
-    <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, setDoc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-        // CONFIGURACIÓN PROPORCIONADA POR EL USUARIO
         const firebaseConfig = {
             apiKey: "AIzaSyDeAEqs6rqFEvHpgZpA68KoKfCG0XxdeH4",
             authDomain: "serenatas-2cc3a.firebaseapp.com",
@@ -108,13 +107,32 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const docRef = doc(db, "rcces", "boletos-v1");
+        const docRef = doc(db, "datos", "serenatas_control");
 
         const names = ["Doña Remi", "Lupita palma", "Yuli", "kike", "Emilio", "Ale García", "Ricardo", "Anita", "linda", "Toño Rivas", "Lucy", "Toño", "Shenny", "Felipe", "Ale", "Mario", "Lucero", "Alex", "Amairani", "Ángel", "Dani Eliza", "Gaby", "Brenda", "Iván", "Jessi", "Karla", "Linda", "Marcos", "Nico", "Nuri", "mateo"];
         
         window.state = { price: 50, members: [] };
 
-        // Iniciar la aplicación directamente sin código de acceso
+        // Temporizador de seguridad para quitar la pantalla de carga si Firebase falla
+        const safetyTimer = setTimeout(() => {
+            hideLoader();
+            updateStatus('ERROR / LOCAL', 'bg-red-500');
+        }, 5000);
+
+        function hideLoader() {
+            clearTimeout(safetyTimer);
+            const loader = document.getElementById('loadingOverlay');
+            if (loader) {
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.classList.add('hidden'), 500);
+            }
+        }
+
+        function updateStatus(text, colorClass) {
+            document.getElementById('statusText').textContent = text;
+            document.getElementById('statusDot').className = `w-2 h-2 rounded-full ${colorClass}`;
+        }
+
         function startApp() {
             onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
@@ -124,11 +142,12 @@
                     saveToCloud();
                 }
                 render();
-                const loader = document.getElementById('loadingOverlay');
-                if (loader) {
-                    loader.classList.add('opacity-0');
-                    setTimeout(() => loader.classList.add('hidden'), 500);
-                }
+                hideLoader();
+                updateStatus('SINCRO ACTIVA', 'bg-green-400');
+            }, (error) => {
+                console.error("Firestore Error:", error);
+                hideLoader();
+                updateStatus('MODO OFFLINE', 'bg-orange-500');
             });
         }
 
@@ -147,11 +166,13 @@
                 await setDoc(docRef, window.state);
             } catch (e) {
                 console.error("Error guardando:", e);
+                updateStatus('ERROR AL GUARDAR', 'bg-red-500');
             }
         }
 
         function render() {
             const table = document.getElementById('membersTable');
+            if (!table) return;
             table.innerHTML = '';
             let totalSold = 0;
 
@@ -181,8 +202,8 @@
 
             document.getElementById('dashboard').innerHTML = `
                 <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Vendidos</p><p class="text-xl font-bold">${totalSold}</p></div>
-                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Pendientes</p><p class="text-xl font-bold text-orange-500">${500 - totalSold}</p></div>
-                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Caja</p><p class="text-xl font-bold text-green-600">$${(totalSold * window.state.price).toLocaleString()}</p></div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Quedan</p><p class="text-xl font-bold text-orange-500">${500 - totalSold}</p></div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Total $</p><p class="text-xl font-bold text-green-600">$${(totalSold * window.state.price).toLocaleString()}</p></div>
                 <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Meta</p><p class="text-xl font-bold text-slate-800">$${(500 * window.state.price).toLocaleString()}</p></div>
             `;
             lucide.createIcons();
@@ -232,7 +253,7 @@
 
         window.currentModalId = null;
         lucide.createIcons();
-        startApp(); // Ejecutar carga al iniciar
+        startApp();
     </script>
 </body>
 </html>
