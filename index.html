@@ -17,10 +17,9 @@
 </head>
 <body class="text-slate-800 pb-20">
 
-    <!-- Indicador de Carga -->
     <div id="loadingOverlay" class="fixed inset-0 bg-white z-[100] flex flex-col items-center justify-center transition-opacity duration-500">
         <div class="loader mb-4"></div>
-        <p class="text-red-700 font-bold animate-pulse">Iniciando sistema...</p>
+        <p class="text-red-700 font-bold animate-pulse">Estableciendo conexión...</p>
     </div>
 
     <header class="bg-red-700 text-white shadow-md sticky top-0 z-10">
@@ -34,20 +33,18 @@
             </div>
             <div id="cloudStatus" class="flex items-center gap-1.5 text-[10px] bg-red-800 px-2 py-1 rounded-full border border-red-600">
                 <span id="statusDot" class="w-2 h-2 rounded-full bg-slate-400"></span> 
-                <span id="statusText">LOCAL</span>
+                <span id="statusText">CONECTANDO...</span>
             </div>
         </div>
     </header>
 
     <main class="max-w-5xl mx-auto px-4 py-6">
-        <!-- Dashboard -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="dashboard"></div>
 
-        <!-- Ajustes -->
         <div class="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex justify-between items-center shadow-sm">
             <div>
                 <span class="text-sm font-semibold text-slate-600">Precio del Boleto</span>
-                <p class="text-[10px] text-slate-400">Se guarda automáticamente</p>
+                <p class="text-[10px] text-slate-400">Se sincroniza al instante</p>
             </div>
             <div class="flex items-center gap-2">
                 <span class="text-slate-400">$</span>
@@ -55,7 +52,6 @@
             </div>
         </div>
 
-        <!-- Tabla -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -73,7 +69,6 @@
         </div>
     </main>
 
-    <!-- Modal -->
     <div id="ticketModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden fade-in flex flex-col max-h-[85vh]">
             <div class="p-5 border-b flex justify-between items-center bg-slate-50">
@@ -94,6 +89,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDeAEqs6rqFEvHpgZpA68KoKfCG0XxdeH4",
@@ -106,29 +102,14 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const docRef = doc(db, "serenatas", "v1");
+        const auth = getAuth(app);
+        
+        // Nueva ruta actualizada para forzar un reinicio con la nueva distribución
+        const docRef = doc(db, "ventas", "actual_v2");
 
         const names = ["Doña Remi", "Lupita palma", "Yuli", "kike", "Emilio", "Ale García", "Ricardo", "Anita", "linda", "Toño Rivas", "Lucy", "Toño", "Shenny", "Felipe", "Ale", "Mario", "Lucero", "Alex", "Amairani", "Ángel", "Dani Eliza", "Gaby", "Brenda", "Iván", "Jessi", "Karla", "Linda", "Marcos", "Nico", "Nuri", "mateo"];
         
-        // Estado inicial por si falla la nube
-        window.state = { 
-            price: 50, 
-            members: names.map((name, i) => {
-                const qty = i < 4 ? 17 : 16;
-                const startNum = (i === 0) ? 1 : (i * 16 + 1 + (i > 4 ? 4 : 0)); // Aproximación rápida
-                // Calculamos el inicio real
-                let currentStart = 1;
-                for(let k=0; k<i; k++) {
-                    currentStart += (k < 4 ? 17 : 16);
-                }
-                return {
-                    id: i,
-                    name: name,
-                    start: currentStart,
-                    tickets: Array.from({length: qty}, (_, j) => ({n: currentStart + j, s: false}))
-                };
-            })
-        };
+        window.state = { price: 50, members: [] };
 
         function hideLoader() {
             const loader = document.getElementById('loadingOverlay');
@@ -145,32 +126,54 @@
             if(elDot) elDot.className = `w-2 h-2 rounded-full ${colorClass}`;
         }
 
-        // Forzar arranque si Firebase tarda mucho
-        setTimeout(() => {
-            if (document.getElementById('loadingOverlay') && !document.getElementById('loadingOverlay').classList.contains('hidden')) {
-                console.log("Carga forzada local");
-                render();
-                hideLoader();
-                updateStatus('MODO LOCAL', 'bg-orange-400');
+        async function init() {
+            try {
+                // Forzamos el login anónimo
+                await signInAnonymously(auth);
+                startSync();
+            } catch (error) {
+                console.error("Auth Falló:", error);
+                startSync(); // Intentar aunque falle auth
             }
-        }, 2000);
+        }
 
-        function startApp() {
+        function startSync() {
             onSnapshot(docRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.state = docSnap.data();
                     updateStatus('NUBE ACTIVA', 'bg-green-400');
                 } else {
+                    window.state.members = createInitialState();
                     saveToCloud();
-                    updateStatus('NUBE VACÍA', 'bg-blue-400');
+                    updateStatus('SINCRO INICIAL', 'bg-blue-400');
                 }
                 render();
                 hideLoader();
             }, (error) => {
-                console.error("Error nube:", error);
+                console.error("Firestore Error:", error);
+                // Si hay error de permisos, mostramos lo local para que no esté vacío
+                if (window.state.members.length === 0) {
+                    window.state.members = createInitialState();
+                }
                 render();
                 hideLoader();
-                updateStatus('ERROR NUBE', 'bg-red-500');
+                updateStatus('ERROR PERMISOS', 'bg-red-500');
+            });
+        }
+
+        function createInitialState() {
+            let currentStart = 1;
+            return names.map((name, i) => {
+                // Buscamos exactamente a "Ale" para darle 20, el resto recibe 16
+                const qty = (name === "Ale") ? 20 : 16;
+                const m = {
+                    id: i,
+                    name: name,
+                    start: currentStart,
+                    tickets: Array.from({length: qty}, (_, j) => ({n: currentStart + j, s: false}))
+                };
+                currentStart += qty;
+                return m;
             });
         }
 
@@ -179,6 +182,7 @@
                 await setDoc(docRef, window.state);
             } catch (e) {
                 console.error("Error al guardar:", e);
+                // Si sale error de permisos aquí, intenta refrescar la página tras cambiar las Rules
             }
         }
 
@@ -214,11 +218,24 @@
                 `;
             });
 
+            const meta = 500;
             document.getElementById('dashboard').innerHTML = `
-                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Vendidos</p><p class="text-xl font-bold">${totalSold}</p></div>
-                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Disponibles</p><p class="text-xl font-bold text-orange-500">${500 - totalSold}</p></div>
-                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Total $</p><p class="text-xl font-bold text-green-600">$${(totalSold * window.state.price).toLocaleString()}</p></div>
-                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Meta</p><p class="text-xl font-bold text-slate-800">$${(500 * window.state.price).toLocaleString()}</p></div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-center">
+                    <p class="text-[10px] uppercase font-bold text-slate-400">Vendidos</p>
+                    <p class="text-xl font-bold text-slate-800">${totalSold}</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-center">
+                    <p class="text-[10px] uppercase font-bold text-slate-400">Restan</p>
+                    <p class="text-xl font-bold text-orange-500">${meta - totalSold}</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-center">
+                    <p class="text-[10px] uppercase font-bold text-slate-400">Caja</p>
+                    <p class="text-xl font-bold text-green-600">$${(totalSold * window.state.price).toLocaleString()}</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-center">
+                    <p class="text-[10px] uppercase font-bold text-slate-400">Meta</p>
+                    <p class="text-xl font-bold text-slate-800">$${(meta * window.state.price).toLocaleString()}</p>
+                </div>
             `;
             lucide.createIcons();
             
@@ -229,7 +246,7 @@
             window.currentModalId = id;
             const m = window.state.members[id];
             document.getElementById('modalName').textContent = m.name;
-            document.getElementById('modalRange').textContent = `Boletos: ${m.start} - ${m.start + m.tickets.length - 1}`;
+            document.getElementById('modalRange').textContent = `Boletos asignados: ${m.tickets.length}`;
             renderModalTickets(id);
             document.getElementById('ticketModal').classList.remove('hidden');
         };
@@ -242,7 +259,7 @@
             m.tickets.forEach((t) => {
                 if(t.s) sold++;
                 const b = document.createElement('button');
-                b.className = `p-3 rounded-xl font-bold text-sm transition-all duration-200 ${t.s ? 'bg-green-500 text-white shadow-lg' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`;
+                b.className = `p-3 rounded-xl font-bold text-sm transition-all duration-200 ${t.s ? 'bg-green-500 text-white shadow-md' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`;
                 b.textContent = t.n;
                 b.onclick = async () => { 
                     t.s = !t.s; 
@@ -251,7 +268,7 @@
                 };
                 grid.appendChild(b);
             });
-            document.getElementById('modalSummary').textContent = `Suma: $${sold * window.state.price}`;
+            document.getElementById('modalSummary').textContent = `Total Miembro: $${sold * window.state.price}`;
         }
 
         window.closeModal = () => {
@@ -267,7 +284,7 @@
 
         window.currentModalId = null;
         lucide.createIcons();
-        startApp();
+        init();
     </script>
 </body>
 </html>
