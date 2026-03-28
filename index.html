@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Serenatas - RCCES</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+    </style>
+</head>
+<body class="text-slate-800 pb-20">
+
+    <header class="bg-red-700 text-white shadow-md sticky top-0 z-10">
+        <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <i data-lucide="music" class="w-6 h-6 text-yellow-300"></i>
+                <div>
+                    <h1 class="text-lg font-bold">RCCES - Ministerio de Canto</h1>
+                    <p class="text-[10px] text-red-100 uppercase tracking-widest">Control de Boletos</p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="exportData()" class="bg-red-800 hover:bg-red-900 px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors">
+                    <i data-lucide="share-2" class="w-3.5 h-3.5"></i> Compartir
+                </button>
+                <button onclick="importData()" class="bg-white text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors font-bold">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i> Cargar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-6">
+        <!-- Dashboard -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="dashboard"></div>
+
+        <!-- Ajustes Rápidos -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 mb-6 flex justify-between items-center shadow-sm">
+            <span class="text-sm font-semibold text-slate-600">Precio del Boleto:</span>
+            <div class="flex items-center gap-2">
+                <span class="text-slate-400">$</span>
+                <input type="number" id="ticketPrice" value="50" class="w-20 text-center font-bold border-b-2 border-red-200 focus:border-red-500 outline-none">
+            </div>
+        </div>
+
+        <!-- Tabla -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <table class="w-full text-left">
+                <thead class="bg-slate-50 text-slate-500 text-[10px] uppercase font-bold">
+                    <tr>
+                        <th class="p-4">Miembro</th>
+                        <th class="p-4 text-center">Progreso</th>
+                        <th class="p-4 text-right">Total</th>
+                        <th class="p-4"></th>
+                    </tr>
+                </thead>
+                <tbody id="membersTable" class="divide-y divide-slate-100"></tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Modal de Gestión -->
+    <div id="ticketModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-md overflow-hidden fade-in flex flex-col max-h-[85vh]">
+            <div class="p-5 border-b flex justify-between items-center bg-slate-50">
+                <h3 class="font-bold text-lg" id="modalName"></h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x"></i></button>
+            </div>
+            <div id="modalTicketsGrid" class="p-6 grid grid-cols-4 gap-3 overflow-y-auto"></div>
+            <div class="p-5 border-t bg-slate-50 flex justify-between items-center">
+                <span id="modalSummary" class="text-sm font-bold text-green-700"></span>
+                <button onclick="closeModal()" class="bg-red-600 text-white px-5 py-2 rounded-lg text-sm font-bold">Listo</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const names = ["Doña Remi", "Lupita palma", "Yuli", "kike", "Emilio", "Ale García", "Ricardo", "Anita", "linda", "Toño Rivas", "Lucy", "Toño", "Shenny", "Felipe", "Ale", "Mario", "Lucero", "Alex", "Amairani", "Ángel", "Dani Eliza", "Gaby", "Brenda", "Iván", "Jessi", "Karla", "Linda", "Marcos", "Nico", "Nuri", "mateo"];
+        
+        let state = { price: 50, members: [] };
+
+        function init() {
+            let n = 1;
+            state.members = names.map((name, i) => {
+                const qty = i < 4 ? 17 : 16;
+                const m = { id: i, name, start: n, tickets: Array.from({length: qty}, (_, j) => ({n: n + j, s: false})) };
+                n += qty;
+                return m;
+            });
+            render();
+        }
+
+        function render() {
+            const table = document.getElementById('membersTable');
+            table.innerHTML = '';
+            let totalSold = 0;
+
+            state.members.forEach(m => {
+                const sold = m.tickets.filter(t => t.s).length;
+                totalSold += sold;
+                table.innerHTML += `
+                    <tr class="text-sm">
+                        <td class="p-4 font-semibold">${m.name}<br><span class="text-[10px] text-slate-400 font-normal">#${m.start}-${m.start + m.tickets.length - 1}</span></td>
+                        <td class="p-4 text-center">
+                            <span class="px-2 py-1 rounded-md text-[10px] font-bold ${sold === m.tickets.length ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}">
+                                ${sold}/${m.tickets.length}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right font-bold text-green-600">$${sold * state.price}</td>
+                        <td class="p-4 text-right">
+                            <button onclick="openModal(${m.id})" class="text-red-600 p-2 hover:bg-red-50 rounded-full"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('dashboard').innerHTML = `
+                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Vendidos</p><p class="text-xl font-bold">${totalSold}</p></div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Por Vender</p><p class="text-xl font-bold text-orange-500">${500 - totalSold}</p></div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Caja Actual</p><p class="text-xl font-bold text-green-600">$${totalSold * state.price}</p></div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200"><p class="text-[10px] uppercase font-bold text-slate-400">Meta</p><p class="text-xl font-bold text-slate-800">$${500 * state.price}</p></div>
+            `;
+            lucide.createIcons();
+        }
+
+        window.openModal = (id) => {
+            const m = state.members[id];
+            document.getElementById('modalName').textContent = m.name;
+            const grid = document.getElementById('modalTicketsGrid');
+            grid.innerHTML = '';
+            m.tickets.forEach((t, i) => {
+                const b = document.createElement('button');
+                b.className = `p-3 rounded-lg font-bold text-sm transition-all ${t.s ? 'bg-green-500 text-white shadow-md scale-105' : 'bg-slate-100 text-slate-400'}`;
+                b.textContent = t.n;
+                b.onclick = () => { t.s = !t.s; renderModalTickets(id); render(); };
+                grid.appendChild(b);
+            });
+            renderModalTickets(id);
+            document.getElementById('ticketModal').classList.remove('hidden');
+        };
+
+        function renderModalTickets(id) {
+            const sold = state.members[id].tickets.filter(t => t.s).length;
+            document.getElementById('modalSummary').textContent = `Total: $${sold * state.price}`;
+            const grid = document.getElementById('modalTicketsGrid');
+            Array.from(grid.children).forEach((btn, i) => {
+                const t = state.members[id].tickets[i];
+                btn.className = `p-3 rounded-lg font-bold text-sm transition-all ${t.s ? 'bg-green-500 text-white shadow-md scale-105' : 'bg-slate-100 text-slate-400'}`;
+            });
+        }
+
+        window.closeModal = () => document.getElementById('ticketModal').classList.add('hidden');
+
+        document.getElementById('ticketPrice').oninput = (e) => { state.price = parseInt(e.target.value) || 0; render(); };
+
+        // FUNCIONES DE COMPARTIR
+        window.exportData = () => {
+            const dataStr = btoa(JSON.stringify(state));
+            const dummy = document.createElement("textarea");
+            document.body.appendChild(dummy);
+            dummy.value = dataStr;
+            dummy.select();
+            document.execCommand("copy");
+            document.body.removeChild(dummy);
+            alert("¡CÓDIGO COPIADO AL PORTAPAPELES!\nPégalo en el WhatsApp del grupo para compartir el progreso.");
+        };
+
+        window.importData = () => {
+            const code = prompt("Pega aquí el código que te compartieron:");
+            if (code) {
+                try {
+                    state = JSON.parse(atob(code));
+                    render();
+                    alert("¡Datos actualizados con éxito!");
+                } catch(e) { alert("Código inválido. Asegúrate de copiar todo el texto."); }
+            }
+        };
+
+        init();
+    </script>
+</body>
+</html>
